@@ -129,3 +129,46 @@ def scan_one(sym):
         }
     except Exception:
         return None
+        # ---------- Universe listing (US common stocks on major exchanges)
+def list_us_tickers(limit=2500):
+    url = f"{BASE}/v3/reference/tickers"
+    params = {
+        "market": "stocks",
+        "active": "true",
+        "type": "CS",
+        "limit": 1000,
+        # You can add 'ticker.gte' or 'ticker.lt' for paging alphabetically if you want
+    }
+    out = []
+    next_url = url
+    while next_url and len(out) < limit:
+        data = poly_get(next_url, params if next_url.endswith("/tickers") else None)
+        for t in data.get("results", []):
+            if t.get("primary_exchange") in ("XNYS", "XNAS", "XASE", "ARCX", "BATS", "IEXG"):
+                out.append(t["ticker"])
+        next_url = data.get("next_url")
+    return sorted(set(out))[:limit]
+
+
+# ---------- Batch scan helper (returns BUY hits only)
+def scan_many(symbols):
+    hits = []
+    for i, sym in enumerate(symbols, 1):
+        res = scan_one(sym)
+        if res and "BUY" in res:
+            b = res["BUY"]
+            hits.append({
+                "ticker": sym,
+                "price": b["price"],
+                "time": b["time"],
+                "dd_pct": b["drawdown_pct"],
+                "macd": b["macd"],
+                "mom6": b["mom6"],
+                "mom12": b["mom12"],
+            })
+        # polite pacing: Polygon Starter is fine but this avoids spikes
+        time.sleep(0.10)
+    # rank by drawdown (largest first)
+    hits.sort(key=lambda x: -x["dd_pct"])
+    return hits
+
